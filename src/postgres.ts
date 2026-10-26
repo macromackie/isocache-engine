@@ -1,5 +1,6 @@
 export {
   createPostgresSync,
+  erasePrincipal,
   migrateSync,
   pruneViews,
   SyncError,

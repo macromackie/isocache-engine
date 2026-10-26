@@ -4,15 +4,18 @@ import { field, integer, object, string, versionMap } from "./validation.js";
 import { SyncError } from "./transaction.js";
 
 export type MetadataLayout = {
-  tables: { clients: string; receipts: string; views: string };
+  tables: { clients: string; receipts: string; views: string; retiredOperations?: string };
   receiptIdentity: "sequence" | "operation";
 };
+
+const defaultRetiredOperations = "isocache.retired_operations";
 
 const defaultLayout: MetadataLayout = {
   tables: {
     clients: "isocache.sync_clients",
     receipts: "isocache.operation_receipts",
     views: "isocache.client_views",
+    retiredOperations: defaultRetiredOperations,
   },
   receiptIdentity: "operation",
 };
@@ -31,6 +34,7 @@ export function createMetadataStore(layout: MetadataLayout = defaultLayout) {
     clients: tableIdentifier(layout.tables.clients),
     receipts: tableIdentifier(layout.tables.receipts),
     views: tableIdentifier(layout.tables.views),
+    retiredOperations: tableIdentifier(layout.tables.retiredOperations ?? defaultRetiredOperations),
   };
   const receiptIdentity = layout.receiptIdentity;
   if (receiptIdentity !== "sequence" && receiptIdentity !== "operation")
@@ -38,6 +42,43 @@ export function createMetadataStore(layout: MetadataLayout = defaultLayout) {
 
   return {
     receiptIdentity,
+    async erasePrincipal(tx: PoolClient, principalID: string) {
+      await tx.query(`SELECT id FROM ${names.clients} WHERE owner_id = $1 ORDER BY id FOR UPDATE`, [
+        principalID,
+      ]);
+      if (receiptIdentity === "operation") {
+        await tx.query(
+          `WITH owned_operations AS MATERIALIZED (
+             SELECT receipt.operation_id FROM ${names.receipts} receipt
+             JOIN ${names.clients} client ON client.id = receipt.client_id
+             WHERE client.owner_id = $1 ORDER BY receipt.operation_id
+           )
+           SELECT pg_advisory_xact_lock(hashtextextended(operation_id::text, 0)) FROM owned_operations`,
+          [principalID],
+        );
+        await tx.query(
+          `INSERT INTO ${names.retiredOperations}(operation_id)
+           SELECT receipt.operation_id FROM ${names.receipts} receipt
+           JOIN ${names.clients} client ON client.id = receipt.client_id
+           WHERE client.owner_id = $1 ON CONFLICT DO NOTHING`,
+          [principalID],
+        );
+      }
+      await tx.query(
+        `DELETE FROM ${names.receipts} receipt USING ${names.clients} client
+         WHERE receipt.client_id = client.id AND client.owner_id = $1`,
+        [principalID],
+      );
+      await tx.query(
+        `DELETE FROM ${names.views} stored_view USING ${names.clients} client
+         WHERE stored_view.client_id = client.id AND client.owner_id = $1`,
+        [principalID],
+      );
+      const result = await tx.query(`DELETE FROM ${names.clients} WHERE owner_id = $1`, [
+        principalID,
+      ]);
+      return result.rowCount ?? 0;
+    },
     async lockClient(tx: PoolClient, principalID: string, clientID: string, version: 1 | 2) {
       await tx.query(
         `INSERT INTO ${names.clients}(id, owner_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
@@ -67,6 +108,12 @@ export function createMetadataStore(layout: MetadataLayout = defaultLayout) {
       fingerprint: string,
     ) {
       await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [operationID]);
+      const retired = await tx.query(
+        `SELECT 1 FROM ${names.retiredOperations} WHERE operation_id = $1`,
+        [operationID],
+      );
+      if (retired.rowCount)
+        throw new SyncError("Operation identifier belongs to retired work.", 409);
       const result = await tx.query(
         `SELECT client_id, sequence, command = $2::jsonb AS same_command FROM ${names.receipts} WHERE operation_id = $1`,
         [operationID, fingerprint],

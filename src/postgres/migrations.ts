@@ -38,6 +38,14 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS client_views_created ON isocache.client_views(created_at);
     `,
   },
+  {
+    version: 2,
+    sql: `
+      CREATE TABLE IF NOT EXISTS isocache.retired_operations (
+        operation_id uuid PRIMARY KEY
+      );
+    `,
+  },
 ];
 
 export async function migrateSync(pool: Pool): Promise<void> {

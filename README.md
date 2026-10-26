@@ -12,7 +12,7 @@ The package ships compiled JavaScript and TypeScript declarations. Its public mo
 Install the compiled release artifact and commit the resulting lockfile:
 
 ```sh
-pnpm add https://github.com/macromackie/isocache-engine/releases/download/v0.2.0/macromackie-isocache-engine-0.2.0.tgz
+pnpm add https://github.com/macromackie/isocache-engine/releases/download/v0.2.1/macromackie-isocache-engine-0.2.1.tgz
 ```
 
 Import from `@macromackie/isocache-engine/postgres` or the other explicit exports. The release tarball contains
@@ -27,6 +27,12 @@ Rejected and applied-with-notice outcomes require a stable `code` and a readable
 Accepted outcomes carry neither. The engine validates this boundary for JavaScript callers too.
 All authorization and resource locks belong inside that transaction. Callbacks can run again after a
 serialization failure; put durable external work in an application outbox.
+
+An optional `authorize(tx, { principalID })` callback runs before client metadata is read or created in every push
+operation and pull transaction. Use it to lock and validate an application-owned principal record. Throw when the
+principal no longer has access; a rejection outcome would still commit sync metadata. This callback does not
+replace authorization of individual resources in `apply` and `readView`. Empty push requests create no transaction
+or metadata and do not call it.
 
 `readView` returns authorized `{ key, version, value }` rows from the supplied transaction. Versions are string
 equality tokens: an unchanged version must always mean the same serialized value. Rows omitted from the next
@@ -47,13 +53,43 @@ changes back to a savepoint but still commit their terminal receipt. Exceptions 
 Every terminal operation UUID is bound permanently to one client, sequence, and original mutation name and arguments, including
 rejections. A different binding fails with a conflict. Reusing a client under another principal is forbidden.
 Do not delete receipt or client metadata while that identity could retry old work or a domain token could
-reference its operation IDs. Deleting a client cascades its receipts; applications must account for this when
-implementing account deletion.
+reference its operation IDs. Normal cleanup must preserve those identities. Explicit principal erasure ends the
+deleted principal's retry guarantee and replaces full bindings with opaque UUID reservations, as described below.
 
 Pulls read the projection, receipts, and CVR in one repeatable-read transaction. A missing or expired CVR
 produces a clear/reset patch and resends unresolved rejection receipts. Acknowledgement advances only through
 the last sequence recorded in the supplied CVR. Clear/reset never means the client should erase its outbox.
 `pruneViews` removes a bounded number of expired CVRs globally; it never prunes operation identities.
+
+### Principal erasure
+
+`erasePrincipal(tx, principalID, { metadata? })` deletes that principal's client records, operation receipts
+(including saved command arguments), and CVRs. It returns the number of deleted clients. It uses the caller's
+active transaction and leaves application data and other principals' metadata alone. It also works with explicitly
+configured legacy layouts whose foreign keys do not cascade.
+
+For operation-identity layouts, erasure first reserves every terminal operation UUID in a table containing only
+`operation_id`. It retains no principal, client, mutation name, arguments or timestamp. Every future operation
+checks these reservations and rejects reuse, including another principal reusing an old overwritten edit token.
+Erasure and UUID binding take the same advisory lock so a concurrent request cannot pass between the reservation
+check and receipt removal. Reservations are permanent; ordinary cleanup never deletes them.
+
+Call it only when permanently retiring an application principal. Revoke that principal's sessions/access and
+coordinate deletion with the same application-owned principal lock used by `authorize`. Take that lock before
+metadata locks. Delete application records and erase sync metadata in the same transaction. On rollback, both
+remain. A previously authenticated request must fail inside `authorize` after deletion, including a pull that
+would otherwise create a fresh client. Checking a session only before entering the engine does not provide this
+guarantee. The engine has no authentication database or permanent deleted-principal registry of its own.
+
+Do not use erasure to reset a device, retry a failed operation, expire a session, or clear old CVRs. The retired
+principal must never be admitted again. Applications own retention or anonymization of shared domain history and
+must still advance the edit token on every accepted edit. Sequence-identity layouts have no global operation-UUID
+binding or retirement reservations; they retain their weaker client/sequence guarantees.
+
+Operation layouts use `isocache.retired_operations` by default. Run `migrateSync` before using version 0.2.1.
+A custom operation layout can set `metadata.tables.retiredOperations` to a validated table name and own its migration;
+the table must have `operation_id uuid PRIMARY KEY`. Use the same layout for pushes, pulls and erasure. Missing
+reservation tables fail the transaction rather than silently weakening identity protection.
 
 Existing installations can supply a `MetadataLayout` with validated table identifiers and
 `receiptIdentity: 'sequence'`. This preserves client/sequence deduplication against existing columns without
@@ -78,6 +114,10 @@ Remove error fields from accepted outcomes. No client reset or receipt deletion 
 The Postgres implementation now has focused modules under [src/postgres](src/postgres).
 Only the explicitly exported package entry points are public. Internal metadata reads validate stored values,
 and rollback failures discard the connection while preserving the original error.
+
+Version 0.2.1 adds the UUID-only retirement ledger. Run `migrateSync` before using the new engine against default
+metadata, including an existing 0.2 installation. Adopt the transactional `authorize` hook when implementing
+principal erasure so an already authenticated request cannot recreate client metadata after deletion.
 
 ## Local example
 

@@ -18,6 +18,7 @@ export async function pullView<Command, Entity, Extension>(
   const clientID = identifier(request.clientID);
   const requestedCookie = request.cookie === null ? null : identifier(request.cookie);
   return transaction(pool, async (tx) => {
+    await application.authorize?.(tx, { principalID });
     const lastSequence = await metadata.lockClient(tx, principalID, clientID, request.version);
     const previous = await metadata.readView(tx, clientID, requestedCookie);
     const view = await application.readView(tx, {

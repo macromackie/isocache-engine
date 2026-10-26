@@ -31,6 +31,7 @@ export type PullResult<Entity, Extension = undefined> = Updates<Entity> & {
 };
 
 export type ApplicationSync<Command, Entity, Extension = undefined> = {
+  authorize?(tx: PoolClient, context: { principalID: string }): Promise<void>;
   apply(tx: PoolClient, context: OperationContext, command: Command): Promise<Outcome>;
   readView(tx: PoolClient, context: ViewContext): Promise<ApplicationView<Entity, Extension>>;
 };
