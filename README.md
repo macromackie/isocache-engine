@@ -12,7 +12,7 @@ The package ships compiled JavaScript and TypeScript declarations. Its public mo
 Install the compiled release artifact and commit the resulting lockfile:
 
 ```sh
-pnpm add https://github.com/macromackie/isocache-engine/releases/download/v0.1.0/macromackie-isocache-engine-0.1.0.tgz
+pnpm add https://github.com/macromackie/isocache-engine/releases/download/v0.2.0/macromackie-isocache-engine-0.2.0.tgz
 ```
 
 Import from `@macromackie/isocache-engine/postgres` or the other explicit exports. The release tarball contains
@@ -23,12 +23,14 @@ compiled modules; consumers do not compile this repository or need its example t
 Create one `createPostgresSync` adapter from [the Postgres API](src/postgres.ts). `apply` receives the active
 Postgres transaction, authenticated principal, immutable operation ID, client ID, and sequence. It returns
 an accepted, rejected, or applied-with-notice outcome and the principals whose views may have changed.
+Rejected and applied-with-notice outcomes require a stable `code` and a readable `message`.
+Accepted outcomes carry neither. The engine validates this boundary for JavaScript callers too.
 All authorization and resource locks belong inside that transaction. Callbacks can run again after a
 serialization failure; put durable external work in an application outbox.
 
 `readView` returns authorized `{ key, version, value }` rows from the supplied transaction. Versions are string
 equality tokens: an unchanged version must always mean the same serialized value. Rows omitted from the next
-view become deletions. An optional typed extension is read in the same snapshot for existing application sidecars.
+view become deletions. A typed extension is read in the same snapshot for existing application sidecars. Supplying an extension type makes its field required in both the adapter and pull result.
 Extensions do not participate in CVR ordering; put synchronized application data in versioned rows.
 
 Authenticate and decode commands before calling the adapter. The engine validates envelope IDs and sequences;
@@ -37,7 +39,7 @@ shows the complete adapter and request mapping. Its fixed principal is for loopb
 
 ## Durability
 
-`migrateSync(pool)` creates metadata in the `isocache` Postgres schema. Each operation commits separately, so a
+`migrateSync(pool)` records numbered migrations in `isocache.schema_migrations` and creates metadata in the `isocache` Postgres schema. It adopts populated 0.1 installations without changing their clients, receipts, or CVRs. Each operation commits separately, so a
 batch can commit a prefix before a later infrastructure failure. Retrying identical operations is safe.
 Accepted and applied-with-notice results commit domain changes and receipts together. Rejections roll domain
 changes back to a savepoint but still commit their terminal receipt. Exceptions consume no sequence.
@@ -55,7 +57,7 @@ the last sequence recorded in the supplied CVR. Clear/reset never means the clie
 
 Existing installations can supply a `MetadataLayout` with validated table identifiers and
 `receiptIdentity: 'sequence'`. This preserves client/sequence deduplication against existing columns without
-applying migrations or requiring UUID bindings. Its tables need the common columns in [the schema](src/schema.ts);
+applying migrations or requiring UUID bindings. Its tables need the common columns in [the baseline migration](src/postgres/migrations.ts);
 receipts omit `operation_id`, `command`, `status`, and `code`. The request version controls v1 cookie reuse and
 receipt replay independently of the layout. New applications use the default `isocache` tables and
 `receiptIdentity: 'operation'`, which enforce UUID binding. The table layout is Postgres configuration, not
@@ -65,6 +67,17 @@ an alternate persistence interface.
 principal to its hub. A poke says only `poke`; every authoritative change arrives through pull. Reconnect and
 periodic foreground pulls recover lost hints. The exported transport reports failures so applications can
 choose their logging and retry policy after writes have committed.
+
+## Upgrade from 0.1
+
+Version 0.2 keeps the existing wire envelope and metadata columns. Run `migrateSync` for default-layout databases
+to adopt the migration ledger; applications with their own sequence-identity layout keep their own migrations.
+Update rejected and applied-with-notice adapter results to include both `code` and `message`.
+Remove error fields from accepted outcomes. No client reset or receipt deletion is required.
+
+The Postgres implementation now has focused modules under [src/postgres](src/postgres).
+Only the explicitly exported package entry points are public. Internal metadata reads validate stored values,
+and rollback failures discard the connection while preserving the original error.
 
 ## Local example
 
@@ -97,7 +110,7 @@ Stop the Worker with Ctrl-C and remove the example database with
 
 ## Checks
 
-Run `mise exec -- pnpm check`. Tests create one disposable, resource-limited Postgres container and remove it
+Run `mise run check`. The aggregate command validates contracts, formatting, strict types, typed lint, dependency boundaries, compilation, and Postgres behavior. Tests create one disposable, resource-limited Postgres container and remove it
 on completion. They require Docker and never use an existing database. `testing.disposablePostgres` exposes
 the same fixture for consuming applications; its caller must always await `stop()`.
 

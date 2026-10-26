@@ -1,42 +1,4 @@
-import type { Pool } from 'pg';
-import { transaction } from './transaction.js';
-
-export type MetadataLayout = {
-  tables: { clients: string; receipts: string; views: string };
-  receiptIdentity: 'sequence' | 'operation';
-};
-
-export function resolveMetadata(
-  layout: MetadataLayout = {
-    tables: {
-      clients: 'isocache.sync_clients',
-      receipts: 'isocache.operation_receipts',
-      views: 'isocache.client_views',
-    },
-    receiptIdentity: 'operation',
-  },
-) {
-  function identifier(value: string) {
-    if (!/^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?$/i.test(value))
-      throw new Error('Invalid Postgres metadata table identifier.');
-    return value
-      .split('.')
-      .map((part) => `"${part}"`)
-      .join('.');
-  }
-  return {
-    clients: identifier(layout.tables.clients),
-    receipts: identifier(layout.tables.receipts),
-    views: identifier(layout.tables.views),
-    receiptIdentity: layout.receiptIdentity,
-  };
-}
-
-export async function migrateSync(pool: Pool): Promise<void> {
-  await transaction(pool, async (tx) => {
-    await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('isocache/migrations', 0))");
-    await tx.query(`
-      CREATE SCHEMA IF NOT EXISTS isocache;
+CREATE SCHEMA IF NOT EXISTS isocache;
       CREATE TABLE IF NOT EXISTS isocache.sync_clients (
         id uuid PRIMARY KEY,
         owner_id text NOT NULL,
@@ -66,6 +28,3 @@ export async function migrateSync(pool: Pool): Promise<void> {
         last_sequence bigint NOT NULL DEFAULT 0
       );
       CREATE INDEX IF NOT EXISTS client_views_created ON isocache.client_views(created_at);
-    `);
-  });
-}

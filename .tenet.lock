@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "sources": {
+    "tenet": "https://github.com/macromackie/tenet-contracts"
+  },
+  "contracts": {
+    ".contracts/003-code-ownership-and-boundaries/CONTRACT.md": {
+      "source": "tenet",
+      "contract": "code-ownership-and-boundaries",
+      "ref": "v7.0.0",
+      "commit": "286fc3ee0f05cf8db446581d072d9fcf01999de0",
+      "hash": "blake3:84a5ab4d1e99a34c181b0137937c7d7472608d23f64cecbea5ce9245ec92c35f"
+    },
+    ".contracts/004-code-typescript-compiler-strictness/CONTRACT.md": {
+      "source": "tenet",
+      "contract": "code-typescript-compiler-strictness",
+      "ref": "v7.0.0",
+      "commit": "286fc3ee0f05cf8db446581d072d9fcf01999de0",
+      "hash": "blake3:601994644db0d6d151e1e68a9be0f8784d130590d924b7b54277ae3d898d635e"
+    },
+    ".contracts/005-contract-maintenance/CONTRACT.md": {
+      "source": "tenet",
+      "contract": "contract-maintenance",
+      "ref": "v7.0.0",
+      "commit": "286fc3ee0f05cf8db446581d072d9fcf01999de0",
+      "hash": "blake3:b04eb8db6981389bfa03e2d0048fce2cc79b13505c82be287bb17f7586830d6f"
+    }
+  }
+}

@@ -4,3 +4,6 @@ dist/
 .celld/
 .dev.vars
 *.tgz
+
+.local/
+*.local.json

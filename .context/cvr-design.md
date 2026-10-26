@@ -32,6 +32,11 @@ The [Worker example](../examples/worker.ts) uses the same Postgres engine under 
 selection and connection settings belong at composition. Pokes are expendable hints; the pull is authoritative.
 Measure projected row count, query time, CVR size, and reset cost before adding a different delivery index.
 
+The Postgres implementation separates operation ordering, view construction and metadata persistence under
+`src/postgres/`. The public entry point retains explicit exports. Runtime validation decodes database rows at their
+owner before orchestration uses them. Accepted, rejected and applied-with-notice outcomes have distinct types; the
+latter two require a code and message. These internal API choices preserve the CVR and durable receipt model above.
+
 [^replicache]: Replicache, [Row Version Strategy](https://doc.replicache.dev/strategies/row-version), accessed October 25, 2026.
 
 [^zero]: Zero, [Self-hosting](https://zero.rocicorp.dev/docs/self-host), accessed October 25, 2026.
