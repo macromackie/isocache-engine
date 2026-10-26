@@ -1,0 +1,105 @@
+# Isocache Engine
+
+Isocache Engine synchronizes offline applications against Postgres. It owns ordered client transactions,
+durable operation receipts, and client view records (CVRs). Applications own authentication, domain tables,
+authorization, commands, and the rows each account can read.
+
+The package ships compiled JavaScript and TypeScript declarations. Its public modules are `protocol`,
+`postgres`, `cloudflare`, and `testing`. It has no web framework or authentication dependency.
+
+## Install
+
+Install the compiled release artifact and commit the resulting lockfile:
+
+```sh
+pnpm add https://github.com/macromackie/isocache-engine/releases/download/v0.1.0/macromackie-isocache-engine-0.1.0.tgz
+```
+
+Import from `@macromackie/isocache-engine/postgres` or the other explicit exports. The release tarball contains
+compiled modules; consumers do not compile this repository or need its example tooling.
+
+## Application adapter
+
+Create one `createPostgresSync` adapter from [the Postgres API](src/postgres.ts). `apply` receives the active
+Postgres transaction, authenticated principal, immutable operation ID, client ID, and sequence. It returns
+an accepted, rejected, or applied-with-notice outcome and the principals whose views may have changed.
+All authorization and resource locks belong inside that transaction. Callbacks can run again after a
+serialization failure; put durable external work in an application outbox.
+
+`readView` returns authorized `{ key, version, value }` rows from the supplied transaction. Versions are string
+equality tokens: an unchanged version must always mean the same serialized value. Rows omitted from the next
+view become deletions. An optional typed extension is read in the same snapshot for existing application sidecars.
+Extensions do not participate in CVR ordering; put synchronized application data in versioned rows.
+
+Authenticate and decode commands before calling the adapter. The engine validates envelope IDs and sequences;
+the application validates command arguments and capability negotiation. The [local example](examples/worker.ts)
+shows the complete adapter and request mapping. Its fixed principal is for loopback development only.
+
+## Durability
+
+`migrateSync(pool)` creates metadata in the `isocache` Postgres schema. Each operation commits separately, so a
+batch can commit a prefix before a later infrastructure failure. Retrying identical operations is safe.
+Accepted and applied-with-notice results commit domain changes and receipts together. Rejections roll domain
+changes back to a savepoint but still commit their terminal receipt. Exceptions consume no sequence.
+
+Every terminal operation UUID is bound permanently to one client, sequence, and original mutation name and arguments, including
+rejections. A different binding fails with a conflict. Reusing a client under another principal is forbidden.
+Do not delete receipt or client metadata while that identity could retry old work or a domain token could
+reference its operation IDs. Deleting a client cascades its receipts; applications must account for this when
+implementing account deletion.
+
+Pulls read the projection, receipts, and CVR in one repeatable-read transaction. A missing or expired CVR
+produces a clear/reset patch and resends unresolved rejection receipts. Acknowledgement advances only through
+the last sequence recorded in the supplied CVR. Clear/reset never means the client should erase its outbox.
+`pruneViews` removes a bounded number of expired CVRs globally; it never prunes operation identities.
+
+Existing installations can supply a `MetadataLayout` with validated table identifiers and
+`receiptIdentity: 'sequence'`. This preserves client/sequence deduplication against existing columns without
+applying migrations or requiring UUID bindings. Its tables need the common columns in [the schema](src/schema.ts);
+receipts omit `operation_id`, `command`, `status`, and `code`. The request version controls v1 cookie reuse and
+receipt replay independently of the layout. New applications use the default `isocache` tables and
+`receiptIdentity: 'operation'`, which enforce UUID binding. The table layout is Postgres configuration, not
+an alternate persistence interface.
+
+`PokeHub` and `pokeTransport` provide optional Cloudflare WebSocket hints. Authenticate before routing a
+principal to its hub. A poke says only `poke`; every authoritative change arrives through pull. Reconnect and
+periodic foreground pulls recover lost hints. The exported transport reports failures so applications can
+choose their logging and retry policy after writes have committed.
+
+## Local example
+
+Install the pinned Node and pnpm versions through mise, then run:
+
+```sh
+mise install
+mise exec -- pnpm install --frozen-lockfile
+docker compose -f examples/compose.yaml up -d --wait
+mise exec -- pnpm example:migrate
+mise exec -- pnpm example:dev
+```
+
+The same Worker and Postgres configuration can run with
+`mise exec github:denoland/celld@0.6.2 -- pnpm example:celld`.
+This repository provides the Worker and database configuration; a consuming application's development tools
+own process lifetimes and build identity. The example uses local demo credentials only.
+
+Send a command and pull the resulting row:
+
+```sh
+curl --fail http://localhost:8799/push -H 'Content-Type: application/json' \
+  -d '{"version":2,"clientID":"00000000-0000-4000-8000-000000000001","operations":[{"id":"00000000-0000-4000-8000-000000000002","sequence":1,"name":"setNote","args":{"key":"note/1","value":"Saved offline"}}]}'
+curl --fail http://localhost:8799/pull -H 'Content-Type: application/json' \
+  -d '{"version":2,"clientID":"00000000-0000-4000-8000-000000000001","cookie":null}'
+```
+
+Stop the Worker with Ctrl-C and remove the example database with
+`docker compose -f examples/compose.yaml down --volumes`.
+
+## Checks
+
+Run `mise exec -- pnpm check`. Tests create one disposable, resource-limited Postgres container and remove it
+on completion. They require Docker and never use an existing database. `testing.disposablePostgres` exposes
+the same fixture for consuming applications; its caller must always await `stop()`.
+
+See [the synchronization contract](.contracts/001-synchronization/CONTRACT.md) for the package's invariants and
+[the protocol types](src/protocol.ts) for the v2 envelope.
