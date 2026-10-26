@@ -1,6 +1,6 @@
 {
   "name": "@macromackie/isocache-engine",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Postgres transactions and client-view synchronization for offline applications",
   "homepage": "https://github.com/macromackie/isocache-engine#readme",
   "bugs": {

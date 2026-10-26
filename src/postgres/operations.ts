@@ -40,6 +40,7 @@ export async function pushOperations<Command, Entity, Extension>(
     const committed = await transaction(
       pool,
       async (tx) => {
+        await application.authorize?.(tx, { principalID });
         const last = await metadata.lockClient(tx, principalID, clientID, request.version);
         if (operation.identity === "operation") {
           await metadata.checkBinding(

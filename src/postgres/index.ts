@@ -1,4 +1,4 @@
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import type { ApplicationSync, PullInput, PushInput } from "./types.js";
 import { createMetadataStore } from "./metadata-store.js";
 import type { MetadataLayout } from "./metadata-store.js";
@@ -40,4 +40,14 @@ export async function pruneViews(
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 10_000)
     throw new Error("Invalid view cleanup limit.");
   return createMetadataStore(metadata).pruneViews(pool, limit);
+}
+
+export async function erasePrincipal(
+  tx: PoolClient,
+  principalID: string,
+  { metadata }: { metadata?: MetadataLayout } = {},
+): Promise<number> {
+  if (typeof principalID !== "string" || principalID.length === 0)
+    throw new Error("Include the principal whose sync metadata should be erased.");
+  return createMetadataStore(metadata).erasePrincipal(tx, principalID);
 }
