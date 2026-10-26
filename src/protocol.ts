@@ -19,13 +19,13 @@ export type PullRequest = {
 };
 
 export type VersionedRow<Entity> = { key: string; version: string; value: Entity };
-export type TerminalStatus = 'accepted' | 'rejected' | 'appliedWithNotice';
+export type TerminalStatus = Outcome["status"];
 export type Receipt = {
   sequence: number;
   error: string | null;
   id?: string;
   code?: string;
-  status?: Exclude<TerminalStatus, 'accepted'>;
+  status?: Exclude<TerminalStatus, "accepted">;
 };
 
 export type Updates<Entity> = {
@@ -39,24 +39,22 @@ export type Updates<Entity> = {
   rejections: Receipt[];
 };
 
-export type Outcome = {
-  status: TerminalStatus;
-  code?: string;
-  message?: string;
-  recipients?: readonly string[];
-};
+export type Outcome =
+  | { status: "accepted"; recipients?: readonly string[] }
+  | { status: "rejected"; code: string; message: string; recipients?: readonly string[] }
+  | { status: "appliedWithNotice"; code: string; message: string; recipients?: readonly string[] };
 
 export function diff<Entity>(
   rows: readonly VersionedRow<Entity>[],
   before: Record<string, string>,
 ) {
-  const versions: Record<string, string> = Object.create(null);
+  const versions = new Map<string, string>();
   const put: VersionedRow<Entity>[] = [];
   for (const row of rows) {
-    if (Object.hasOwn(versions, row.key)) throw new Error(`Duplicate view key: ${row.key}`);
-    versions[row.key] = row.version;
+    if (versions.has(row.key)) throw new Error(`Duplicate view key: ${row.key}`);
+    versions.set(row.key, row.version);
     if (!Object.hasOwn(before, row.key) || before[row.key] !== row.version) put.push(row);
   }
-  const del = Object.keys(before).filter((key) => !Object.hasOwn(versions, key));
-  return { versions, put, del };
+  const del = Object.keys(before).filter((key) => !versions.has(key));
+  return { versions: Object.fromEntries(versions), put, del };
 }

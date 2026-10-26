@@ -1,8 +1,8 @@
-import { execFile } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { promisify } from 'node:util';
-import { setTimeout } from 'node:timers/promises';
-import { Pool } from 'pg';
+import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { promisify } from "node:util";
+import { setTimeout } from "node:timers/promises";
+import { Pool } from "pg";
 
 const exec = promisify(execFile);
 
@@ -19,54 +19,65 @@ export async function disposablePostgres({
   let stopped = false;
   const stop = async () => {
     if (stopped) return;
+    const failures: unknown[] = [];
     try {
       await pool?.end();
-    } finally {
-      pool = undefined;
-      try {
-        await exec('docker', ['rm', '-f', name], { timeout: 10_000 });
-      } catch (error) {
-        const failure = error as { stderr?: string; code?: string };
-        if (failure.code !== 'ENOENT' && !failure.stderr?.includes('No such container')) throw error;
-      }
-      stopped = true;
+    } catch (error) {
+      failures.push(error);
     }
+    pool = undefined;
+    try {
+      await exec("docker", ["rm", "-f", name], { timeout: 10_000 });
+      stopped = true;
+    } catch (error) {
+      const missingExecutable =
+        error !== null && typeof error === "object" && "code" in error && error.code === "ENOENT";
+      const missingContainer =
+        error !== null &&
+        typeof error === "object" &&
+        "stderr" in error &&
+        typeof error.stderr === "string" &&
+        error.stderr.includes("No such container");
+      if (missingExecutable || missingContainer) stopped = true;
+      else failures.push(error);
+    }
+    if (failures.length) throw new AggregateError(failures, "Disposable Postgres cleanup failed.");
   };
   try {
     await exec(
-      'docker',
+      "docker",
       [
-        'run',
-        '--rm',
-        '--detach',
-        '--name',
+        "run",
+        "--rm",
+        "--detach",
+        "--name",
         name,
-        '--cpus',
-        '1',
-        '--memory',
-        '256m',
-        '--label',
+        "--cpus",
+        "1",
+        "--memory",
+        "256m",
+        "--label",
         `isocache.owner=${owner}`,
-        '--label',
+        "--label",
         `isocache.review-at=${new Date(Date.now() + 600_000).toISOString()}`,
-        '--publish',
-        '127.0.0.1::5432',
-        '--env',
+        "--publish",
+        "127.0.0.1::5432",
+        "--env",
         `POSTGRES_PASSWORD=${password}`,
-        '--env',
-        'POSTGRES_DB=isocache_test',
-        'postgres:17-alpine',
+        "--env",
+        "POSTGRES_DB=isocache_test",
+        "postgres:17-alpine",
       ],
       { timeout: timeoutMs },
     );
-    const { stdout } = await exec('docker', ['port', name, '5432/tcp'], { timeout: 5_000 });
-    const port = Number(stdout.trim().split(':').at(-1));
+    const { stdout } = await exec("docker", ["port", name, "5432/tcp"], { timeout: 5_000 });
+    const port = Number(stdout.trim().split(":").at(-1));
     const connectionString = `postgres://postgres:${password}@127.0.0.1:${port}/isocache_test`;
     pool = new Pool({ connectionString, max: 4, connectionTimeoutMillis: 1000 });
     const deadline = Date.now() + timeoutMs;
     while (true) {
       try {
-        await pool.query('SELECT 1');
+        await pool.query("SELECT 1");
         break;
       } catch (error) {
         if (Date.now() >= deadline) throw error;

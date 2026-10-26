@@ -1,6 +1,6 @@
 {
   "name": "@macromackie/isocache-engine",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Postgres transactions and client-view synchronization for offline applications",
   "homepage": "https://github.com/macromackie/isocache-engine#readme",
   "bugs": {
@@ -41,25 +41,36 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit",
+    "build": "tsx scripts/build.ts",
+    "typecheck": "node node_modules/@typescript/native/bin/tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
-    "check": "pnpm typecheck && pnpm build && pnpm test",
+    "check": "pnpm format:check && pnpm typecheck && pnpm lint && pnpm check:dependencies && pnpm build && pnpm test",
     "example:migrate": "tsx examples/migrate.ts",
     "example:dev": "wrangler dev --config examples/wrangler.jsonc --port 8799",
     "example:celld": "celld dev examples/wrangler.jsonc --port 8799",
-    "prepare": "pnpm build"
+    "prepare": "pnpm build",
+    "lint": "eslint src test examples scripts",
+    "check:dependencies": "depcruise src test examples scripts --config .dependency-cruiser.mjs",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check ."
   },
   "dependencies": {
     "pg": "8.22.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260921.1",
+    "@eslint/js": "10.0.1",
+    "@macromackie/swift-factory-toolkit": "https://github.com/macromackie/swift-factory-toolkit/releases/download/v0.2.0/macromackie-swift-factory-toolkit-0.2.0.tgz",
     "@types/node": "22.19.17",
     "@types/pg": "8.20.0",
+    "@typescript/native": "npm:typescript@7.0.2",
+    "dependency-cruiser": "18.7.0",
     "esbuild": "0.28.2",
+    "eslint": "10.13.0",
+    "oxfmt": "0.70.0",
     "tsx": "4.23.1",
-    "typescript": "7.0.2",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "typescript-eslint": "8.72.0",
     "wrangler": "4.136.3"
   },
   "engines": {

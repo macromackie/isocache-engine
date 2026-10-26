@@ -5,11 +5,9 @@ permissions:
 jobs:
   postgres:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22.23.2
-      - run: corepack enable && corepack prepare pnpm@10.28.0 --activate
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm check
+      - uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
+      - run: mise exec -- pnpm install --frozen-lockfile
+      - run: mise run check

@@ -1,20 +1,22 @@
-import { DurableObject } from 'cloudflare:workers';
+import { DurableObject } from "cloudflare:workers";
 
 export class PokeHub extends DurableObject {
   constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
     super(ctx, env);
-    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
+    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
   }
 
-  override async fetch(request: Request): Promise<Response> {
-    if (request.headers.get('Upgrade')?.toLowerCase() === 'websocket') {
-      const [client, server] = Object.values(new WebSocketPair()) as [WebSocket, WebSocket];
+  override fetch(request: Request): Response {
+    if (request.headers.get("Upgrade")?.toLowerCase() === "websocket") {
+      const pair = new WebSocketPair();
+      const client = pair[0];
+      const server = pair[1];
       this.ctx.acceptWebSocket(server);
       return new Response(null, { status: 101, webSocket: client });
     }
     for (const socket of this.ctx.getWebSockets()) {
       try {
-        socket.send('poke');
+        socket.send("poke");
       } catch {
         // A disconnected peer catches up on its next pull.
       }
@@ -22,11 +24,11 @@ export class PokeHub extends DurableObject {
     return new Response(null, { status: 204 });
   }
 
-  override async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer) {
-    if (message === 'ping') socket.send('pong');
+  override webSocketMessage(socket: WebSocket, message: string | ArrayBuffer) {
+    if (message === "ping") socket.send("pong");
   }
 
-  override async webSocketClose(socket: WebSocket, code: number, reason: string) {
+  override webSocketClose(socket: WebSocket, code: number, reason: string) {
     try {
       socket.close(code, reason);
     } catch {
@@ -46,7 +48,7 @@ export function pokeTransport(namespace: DurableObjectNamespace): PokeTransport 
     async poke(principalIDs) {
       await Promise.all(
         [...new Set(principalIDs)].map((id) =>
-          hub(id).fetch('https://poke-hub/poke', { method: 'POST' }),
+          hub(id).fetch("https://poke-hub/poke", { method: "POST" }),
         ),
       );
     },

@@ -4,12 +4,10 @@
     "lib": ["ES2024", "DOM"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
-    "verbatimModuleSyntax": true,
     "skipLibCheck": true,
-    "types": ["node", "@cloudflare/workers-types"]
+    "types": ["node", "@cloudflare/workers-types"],
+    "resolveJsonModule": true
   },
-  "include": ["src", "test", "examples"]
+  "include": ["src", "test", "examples", "scripts"],
+  "extends": "@macromackie/swift-factory-toolkit/config/tsconfig.json"
 }
